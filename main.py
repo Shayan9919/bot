@@ -4,13 +4,13 @@ import random
 import logging
 from threading import Thread
 from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, InlineQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ===== 200 Persian questions (short version here, add full 200) =====
+# ===== 200 Persian questions (shortened here; add all 200) =====
 QUESTIONS = [
 "1. اولین خاطره کودکی‌ات چیه؟",
 "2. چه غذایی رو همیشه دوست داشتی ولی الآن ازش بیزاری؟",
@@ -114,23 +114,22 @@ QUESTIONS = [
 "100. تا حالا یه تجربه عجیب در سفر داشتی؟",
 ]
 
+# helper: pick random question
 def pick_question():
     return random.choice(QUESTIONS)
 
-# ===== Flask server for Render Web Service =====
+# ===== Flask keep-alive server for UptimeRobot =====
 app = Flask('')
 
 @app.route('/')
 def home():
     return "Bot is alive!"
 
-# Run Flask in a separate thread so the bot can start too
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+def run():
+    app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
-    t = Thread(target=run_flask)
+    t = Thread(target=run)
     t.start()
 
 # ===== Telegram Bot Handlers =====
@@ -167,23 +166,32 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.answer([result], cache_time=0)
 
-# ===== Main =====
+# ===== Main Function =====
 def main():
+    # Get token from environment variable
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
-        raise RuntimeError("Please set TELEGRAM_BOT_TOKEN environment variable")
+        raise RuntimeError("لطفاً متغیر محیطی TELEGRAM_BOT_TOKEN را تنظیم کنید.")
 
-    keep_alive()  # start Flask server so Render sees the port
+    # Remove existing webhook to prevent Conflict error
+    bot = Bot(token=token)
+    bot.delete_webhook()
 
-    bot_app = ApplicationBuilder().token(token).build()
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(CommandHandler("question", question_cmd))
-    bot_app.add_handler(CallbackQueryHandler(handle_button))
-    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    bot_app.add_handler(InlineQueryHandler(inline_query))
+    # Start Flask keep-alive server
+    keep_alive()
 
-    logger.info("Bot is running...")
-    bot_app.run_polling()
+    # Build Telegram bot application
+    app_bot = ApplicationBuilder().token(token).build()
+
+    # Add handlers
+    app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CommandHandler("question", question_cmd))
+    app_bot.add_handler(CallbackQueryHandler(handle_button))
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app_bot.add_handler(InlineQueryHandler(inline_query))
+
+    logger.info("Bot is running... Press Ctrl+C to stop it")
+    app_bot.run_polling()
 
 if __name__ == "__main__":
     main()
